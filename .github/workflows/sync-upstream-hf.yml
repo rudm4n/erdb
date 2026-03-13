@@ -1,0 +1,102 @@
+name: Sync upstream & deploy to HF Spaces
+
+on:
+  # Controlla ogni 6 ore
+  schedule:
+    - cron: '0 */6 * * *'
+  # Permette anche trigger manuale da GitHub UI
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/realbestia1/erdb.git || true
+          git fetch upstream main
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          # Trova il merge-base tra il nostro main e upstream/main
+          UPSTREAM=$(git rev-parse upstream/main)
+          
+          # Controlla se upstream ha commit che non abbiamo
+          NEW_COMMITS=$(git rev-list HEAD..upstream/main --count)
+          echo "new_commits=$NEW_COMMITS" >> "$GITHUB_OUTPUT"
+          
+          if [ "$NEW_COMMITS" -gt 0 ]; then
+            echo "🔄 Found $NEW_COMMITS new upstream commits"
+          else
+            echo "✅ Already up to date with upstream"
+          fi
+
+      - name: Merge upstream changes
+        if: steps.check.outputs.new_commits != '0'
+        run: |
+          echo "Merging upstream/main..."
+          # Tenta il merge. Se ci sono conflitti sui file che noi sovrascriviamo
+          # (Dockerfile, README, etc.) accettiamo upstream e riapplichiamo le patch dopo
+          git merge upstream/main --no-edit --strategy-option theirs || {
+            echo "⚠️ Merge conflict detected, resolving with upstream version..."
+            git checkout --theirs .
+            git add -A
+            git commit --no-edit -m "Merge upstream (resolved conflicts with upstream)"
+          }
+
+      - name: Apply HF Spaces patches
+        if: steps.check.outputs.new_commits != '0'
+        run: |
+          chmod +x scripts/apply-hf-patches.sh
+          bash scripts/apply-hf-patches.sh
+          
+          # Committa le patch se ci sono cambiamenti
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            git add -A
+            git commit -m "Auto-apply HF Spaces patches after upstream sync"
+          else
+            echo "No patch changes needed"
+          fi
+
+      - name: Push to GitHub fork
+        if: steps.check.outputs.new_commits != '0'
+        run: |
+          git push origin main
+
+      - name: Push to Hugging Face Spaces
+        if: steps.check.outputs.new_commits != '0'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git remote add hf https://Rudm4n:${HF_TOKEN}@huggingface.co/spaces/Rudm4n/erdb || true
+          git push hf main --force
+          echo "🚀 Pushed to HF Spaces — rebuild triggered!"
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check.outputs.new_commits }}" != "0" ]; then
+            echo "### 🔄 Sync completed" >> $GITHUB_STEP_SUMMARY
+            echo "- Merged **${{ steps.check.outputs.new_commits }}** new commits from upstream" >> $GITHUB_STEP_SUMMARY
+            echo "- Applied HF Spaces patches" >> $GITHUB_STEP_SUMMARY
+            echo "- Pushed to [HF Space](https://huggingface.co/spaces/Rudm4n/ERDB)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ No changes" >> $GITHUB_STEP_SUMMARY
+            echo "Fork is already up to date with upstream." >> $GITHUB_STEP_SUMMARY
+          fi

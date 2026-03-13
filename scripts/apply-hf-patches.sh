@@ -60,7 +60,7 @@ if ! head -1 README.md | grep -q "^---"; then
   ORIGINAL=$(cat README.md)
   cat > README.md << 'YAMLHEADER'
 ---
-title: ERDB
+title: RatingCasa2026
 emoji: 🎬
 colorFrom: blue
 colorTo: purple

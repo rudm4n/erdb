@@ -26,8 +26,10 @@ RUN apt-get update && apt-get install -y fontconfig fonts-dejavu-core fonts-free
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-RUN mkdir -p /app/data
-VOLUME ["/app/data"]
+# Directory data con permessi corretti per HF user
+RUN mkdir -p /app/data && chown -R 1000:1000 /app
 
-EXPOSE 3000
-CMD ["sh", "-c", "npm run start -- -p ${PORT:-3000}"]
+USER 1000
+
+EXPOSE 7860
+CMD ["node", "server.js"]

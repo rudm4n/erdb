@@ -1,6 +1,9 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 
+# better-sqlite3 richiede build tools nativi
+RUN apk add --no-cache python3 make g++
+
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 

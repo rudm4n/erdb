@@ -1,39 +1,35 @@
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
 
-# better-sqlite3 richiede build tools nativi
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN npm ci --ignore-scripts=false
 
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=7860
 ENV HOSTNAME=0.0.0.0
 
-RUN apk add --no-cache fontconfig ttf-dejavu ttf-freefont font-noto
+RUN apt-get update && apt-get install -y fontconfig fonts-dejavu-core fonts-freefont-ttf fonts-noto --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
-# HF Spaces runs as user 1000
-RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
-
-# Standalone output
+# Standalone output di Next.js
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-# Directory data con permessi corretti
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+# Directory data con permessi corretti per HF user
+RUN mkdir -p /app/data && chown -R 1000:1000 /app
 
-USER appuser
+USER 1000
 
 EXPOSE 7860
 CMD ["node", "server.js"]

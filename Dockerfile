@@ -1,9 +1,7 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 
-COPY package*.json ./
-COPY scripts/ ./scripts/
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci --ignore-scripts=false
